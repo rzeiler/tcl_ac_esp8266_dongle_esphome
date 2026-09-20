@@ -62,111 +62,113 @@ void tclacClimate::setup() {
 }
 
 void tclacClimate::loop()  {
-	// Если в буфере UART что-то есть, то читаем это что-то
-	if (esphome::uart::UARTDevice::available() > 0) {
-		// линия занята приёмом — отправку командных кадров придержим
-		this->last_rx_ms_ = millis();
-		dataShow(0, true);
-		dataRX[0] = esphome::uart::UARTDevice::read();
-		// Если принятый байт- не заголовок (0xBB), то просто покидаем цикл
-		if (dataRX[0] != 0xBB) {
-			ESP_LOGD("TCL", "Wrong byte");
-			dataShow(0,0);
-			return;
-		}
-		// А вот если совпал заголовок (0xBB), то начинаем чтение по цепочке еще 4 байт
-		// Иногда, для некоторых кондиционеров все же нужно добавить delay(5) между пакетами. Зачем- ХЗ, но так надо. Но не всегда. Хотя иногда- да. Но не каждый раз. Изредка. Случается.
-		// delay(5);
-		dataRX[1] = esphome::uart::UARTDevice::read();
-		// delay(5);
-		dataRX[2] = esphome::uart::UARTDevice::read();
-		// delay(5);
-		dataRX[3] = esphome::uart::UARTDevice::read();
-		// delay(5);
-		dataRX[4] = esphome::uart::UARTDevice::read();
+    // Wenn sich etwas im UART-Puffer befindet, lesen wir es aus
+    if (esphome::uart::UARTDevice::available() > 0) {
+        // Die Leitung ist mit dem Empfang beschäftigt — das Senden von Befehlsframes wird zurückgehalten
+        this->last_rx_ms_ = millis();
+        dataShow(0, true);
+        dataRX[0] = esphome::uart::UARTDevice::read();
+        // Wenn das empfangene Byte kein Header ist (0xBB), verlassen wir einfach die Schleife
+        if (dataRX[0] != 0xBB) {
+            ESP_LOGD("TCL", "Falsches Byte");
+            dataShow(0,0);
+            return;
+        }
+        // Wenn der Header (0xBB) übereinstimmt, beginnen wir nacheinander mit dem Lesen von 4 weiteren Bytes
+        // Manchmal, bei einigen Klimaanlagen, ist es dennoch notwendig, ein delay(5) zwischen den Paketen hinzuzufügen. Warum — keine Ahnung, aber es ist nötig. Aber nicht immer. Obwohl manchmal — ja. Aber nicht jedes Mal. Ab und zu. Kommt vor.
+        // delay(5);
+        dataRX[1] = esphome::uart::UARTDevice::read();
+        // delay(5);
+        dataRX[2] = esphome::uart::UARTDevice::read();
+        // delay(5);
+        dataRX[3] = esphome::uart::UARTDevice::read();
+        // delay(5);
+        dataRX[4] = esphome::uart::UARTDevice::read();
 
-		//auto raw = getHex(dataRX, 5);
-		//ESP_LOGD("TCL", "first 5 byte : %s ", raw.c_str());
+        auto raw = getHex(dataRX, 5);
+        ESP_LOGD("TCL", "Erste 5 Bytes: %s ", raw.c_str());
 
-		// ЗАЩИТА ОТ ПЕРЕПОЛНЕНИЯ: пятый байт — длина полезной части, дальше
-		// читается dataRX[4]+1 байт в dataRX+5. Легитимны только три длины
-		// кадра (0x37=61, 0x3b=65, 0x3e=68 байт всего). На шумной линии
-		// read() может вернуть -1 (0xFF) или прийти мусор — тогда dataRX[4]+6
-		// вышло бы за пределы dataRX[68]. Отбраковываем такой кадр.
-		if (dataRX[4] != 0x37 && dataRX[4] != 0x3b && dataRX[4] != 0x3e) {
-			ESP_LOGW("TCL", "Bad frame length 0x%02X, dropped", dataRX[4]);
-			while (esphome::uart::UARTDevice::available() > 0) esphome::uart::UARTDevice::read();
-			dataShow(0,0);
-			return;
-		}
+        // ÜBERLAUFSCHUTZ: Das fünfte Byte ist die Länge des Nutzdaten-Teils, danach
+        // werden dataRX[4]+1 Bytes in dataRX+5 gelesen. Es sind nur drei Framelängen
+        // legitim (0x37=61, 0x3b=65, 0x3e=68 Bytes insgesamt). Auf einer verrauschten Leitung
+        // kann read() -1 (0xFF) zurückgeben oder es kommt Müll an — dann würde dataRX[4]+6
+        // die Grenzen von dataRX[68] überschreiten. Solche Frames werden aussortiert.
+        if (dataRX[4] != 0x37 && dataRX[4] != 0x3b && dataRX[4] != 0x3e) {
+            ESP_LOGW("TCL", "Ungültige Framelänge 0x%02X, verworfen", dataRX[4]);
+            while (esphome::uart::UARTDevice::available() > 0) esphome::uart::UARTDevice::read();
+            dataShow(0,0);
+            return;
+        }
 
-		// Из первых 5 байт нам нужен пятый- он содержит длину сообщения.
-		// read_array вернёт false при таймауте (кадр оборвался на полпути) —
-		// тогда в буфере мусор из прошлого кадра, разбирать его нельзя.
-		if (!esphome::uart::UARTDevice::read_array(dataRX+5, dataRX[4]+1)) {
-			ESP_LOGW("TCL", "Frame read timeout, dropped");
-			dataShow(0,0);
-			return;
-		}
+        // Aus den ersten 5 Bytes benötigen wir das fünfte — es enthält die Nachrichtenlänge.
+        // read_array gibt bei einem Timeout false zurück (Frame wurde auf halbem Weg abgebrochen) —
+        // dann befindet sich Müll aus dem letzten Frame im Puffer, der nicht ausgewertet werden darf.
+        if (!esphome::uart::UARTDevice::read_array(dataRX+5, dataRX[4]+1)) {
+            ESP_LOGW("TCL", "Timeout beim Lesen des Frames, verworfen");
+            dataShow(0,0);
+            return;
+        }
 
-		// Добываем контрольную сумму:
-		if (dataRX[4] == 0x3e){
-			// Для пакета данных длиной 68 байт
-			check = getChecksum(dataRX, 68);
-		} else if (dataRX[4] == 0x37){
-			// Для пакета данных длиной 61 байт
-			check = getChecksum(dataRX, 61);
-		} else {
-			// Для пакета данных длиной 65 байт
-			check = getChecksum(dataRX, 65);
-		}
+        // Prüfsumme ermitteln:
+        if (dataRX[4] == 0x3e){
+            // Für Datenpaket mit 68 Bytes Länge
+            check = getChecksum(dataRX, 68);
+        } else if (dataRX[4] == 0x37){
+            // Für Datenpaket mit 61 Bytes Länge
+            check = getChecksum(dataRX, 61);
+        } else {
+            // Für Datenpaket mit 65 Bytes Länge
+            check = getChecksum(dataRX, 65);
+        }
 
-		//raw = getHex(dataRX, sizeof(dataRX));
-		//ESP_LOGD("TCL", "RX full : %s ", raw.c_str());
-		
-		// Проверяем контрольную сумму:
-		if (dataRX[4] == 0x3e){
-			// Для пакета данных длиной 68 байт
-			if (check != dataRX[67]) {
-				ESP_LOGD("TCL", "Invalid checksum %x", check);
-				this->dataShow(0,0);
-				return;
-			} else {
-				//ESP_LOGD("TCL", "checksum OK %x", check);
-			}
-		} else if (dataRX[4] == 0x37){
-			if (check != dataRX[60]) {
-				// Для пакета данных длиной 61 байт
-				ESP_LOGD("TCL", "Invalid checksum %x", check);
-				this->dataShow(0,0);
-				return;
-			} else {
-				//ESP_LOGD("TCL", "checksum OK %x", check);
-			}
-		} else {
-			if (check != dataRX[64]) {
-				// Для пакета данных длиной 65 байт
-				ESP_LOGD("TCL", "Invalid checksum %x", check);
-				this->dataShow(0,0);
-				return;
-			} else {
-				//ESP_LOGD("TCL", "checksum OK %x", check);
-			}
-		}
-		this->dataShow(0,0);
-		// Прочитав все из буфера приступаем к разбору данных
-		this->readData();
-	}
+        raw = getHex(dataRX, sizeof(dataRX));
+        ESP_LOGD("TCL", "RX vollständig: %s ", raw.c_str());
+        
+        // Prüfsumme überprüfen:
+        if (dataRX[4] == 0x3e){
+            // Für Datenpaket mit 68 Bytes Länge
+            if (check != dataRX[67]) {
+                ESP_LOGD("TCL", "Ungültige Prüfsumme %x", check);
+                this->dataShow(0,0);
+                return;
+            } else {
+                //ESP_LOGD("TCL", "Prüfsumme OK %x", check);
+            }
+        } else if (dataRX[4] == 0x37){
+            if (check != dataRX[60]) {
+                // Für Datenpaket mit 61 Bytes Länge
+                ESP_LOGD("TCL", "Ungültige Prüfsumme %x", check);
+                this->dataShow(0,0);
+                return;
+            } else {
+                //ESP_LOGD("TCL", "Prüfsumme OK %x", check);
+            }
+        } else {
+            if (check != dataRX[64]) {
+                // Für Datenpaket mit 65 Bytes Länge
+                ESP_LOGD("TCL", "Ungültige Prüfsumme %x", check);
+                this->dataShow(0,0);
+                return;
+            } else {
+                //ESP_LOGD("TCL", "Prüfsumme OK %x", check);
+            }
+        }
+        this->dataShow(0,0);
+        // Nach dem Lesen aller Daten aus dem Puffer beginnen wir mit der Auswertung
+        this->readData();
+    }
 }
 
 void tclacClimate::update() {
-	tclacClimate::dataShow(1,1);
-	this->esphome::uart::UARTDevice::write_array(poll, sizeof(poll));
-	// после опроса кондиционер начнёт отвечать — командные кадры подождут
-	this->poll_sent_ms_ = millis();
-	//auto raw = tclacClimate::getHex(poll, sizeof(poll));
-	ESP_LOGD("TCL", "chek status sended");
-	tclacClimate::dataShow(1,0);
+    tclacClimate::dataShow(1,1);
+    this->esphome::uart::UARTDevice::write_array(poll, sizeof(poll));
+    // Nach der Abfrage beginnt die Klimaanlage zu antworten — Befehlsframes müssen warten
+    this->poll_sent_ms_ = millis();
+    auto raw = tclacClimate::getHex(poll, sizeof(poll));
+    ESP_LOGD("TCL", "poll vollständig: %s ", raw.c_str());
+
+    ESP_LOGD("TCL", "Statusabfrage gesendet");
+    tclacClimate::dataShow(1,0);
 }
 
 void tclacClimate::readData() {
