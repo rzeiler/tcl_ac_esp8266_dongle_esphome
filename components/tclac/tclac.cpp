@@ -164,9 +164,8 @@ void tclacClimate::update() {
     this->esphome::uart::UARTDevice::write_array(poll, sizeof(poll));
     // Nach der Abfrage beginnt die Klimaanlage zu antworten — Befehlsframes müssen warten
     this->poll_sent_ms_ = millis();
-    auto raw = tclacClimate::getHex(poll, sizeof(poll));
-    ESP_LOGD("TCL", "poll vollständig: %s ", raw.c_str());
-
+    // auto raw = tclacClimate::getHex(poll, sizeof(poll));
+    // ESP_LOGD("TCL", "poll vollständig: %s ", raw.c_str());
     ESP_LOGD("TCL", "Statusabfrage gesendet");
     tclacClimate::dataShow(1,0);
 }
