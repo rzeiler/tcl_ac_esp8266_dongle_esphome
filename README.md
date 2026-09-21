@@ -42,9 +42,7 @@ Integration of TCL air conditioners into Home Assistant via ESPHome using an ESP
 ### 1. Prerequisites
 Make sure you have **ESPHome** installed (either as a Home Assistant Add-on or standalone CLI).
 
-### 2. Configuration
-1. Clone this repository or download the `tcl_ac.yaml` configuration file.
-2. Create a `secrets.yaml` file in your ESPHome directory with your credentials:
+### 2. Configuration yaml
    ```yaml
         external_components:
             - source:
